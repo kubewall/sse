@@ -29,7 +29,6 @@ func (s *Server) ServeHTTP(streamID string, w http.ResponseWriter, r *http.Reque
 	}
 
 	// Get the StreamID from the URL
-	streamID := streamID
 	if streamID == "" {
 		http.Error(w, "Please specify a stream!", http.StatusInternalServerError)
 		return

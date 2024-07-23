@@ -13,7 +13,7 @@ import (
 )
 
 // ServeHTTP serves new connections with events for a given stream ...
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(streamID string, w http.ResponseWriter, r *http.Request) {
 	flusher, err := w.(http.Flusher)
 	if !err {
 		http.Error(w, "Streaming unsupported!", http.StatusInternalServerError)
@@ -29,7 +29,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the StreamID from the URL
-	streamID := r.URL.Query().Get("stream")
+	streamID := streamID
 	if streamID == "" {
 		http.Error(w, "Please specify a stream!", http.StatusInternalServerError)
 		return

@@ -1,9 +1,10 @@
 module github.com/kubewall/sse/v2
 
-go 1.13
+go 1.23
 
 require (
-	github.com/stretchr/testify v1.7.0
-	golang.org/x/net v0.0.0-20191116160921-f9c825593386 // indirect
+	github.com/stretchr/testify v1.9.0
 	gopkg.in/cenkalti/backoff.v1 v1.1.0
 )
+
+require golang.org/x/net v0.30.0 // indirect

@@ -13,6 +13,17 @@ import (
 // DefaultBufferSize size of the queue that holds the streams messages.
 const DefaultBufferSize = 1024
 
+const (
+	// DefaultMaxEventLogEvents is how many of the most recent events a stream
+	// retains for replay when AutoReplay is enabled.
+	DefaultMaxEventLogEvents = 100
+
+	// DefaultMaxEventLogBytes caps the total event data a single stream
+	// retains. A count-only bound is not enough when events are large: 100
+	// multi-megabyte payloads is still hundreds of megabytes per stream.
+	DefaultMaxEventLogBytes = 1 << 20 // 1 MiB
+)
+
 // Server Is our main struct
 type Server struct {
 	// Extra headers adding to the HTTP response to each client
@@ -29,6 +40,12 @@ type Server struct {
 	AutoStream bool
 	// Enables automatic replay for each new subscriber that connects
 	AutoReplay bool
+	// Upper bound on how many of the most recent events each stream retains
+	// for replay. <= 0 means unbounded (leaks; not recommended).
+	MaxEventLogEvents int
+	// Upper bound on the total event data each stream retains for replay.
+	// <= 0 means unbounded.
+	MaxEventLogBytes int
 
 	// Specifies the function to run when client subscribe or un-subscribe
 	OnSubscribe   func(streamID string, sub *Subscriber)
@@ -41,24 +58,28 @@ type Server struct {
 // New will create a server and setup defaults
 func New() *Server {
 	return &Server{
-		BufferSize: DefaultBufferSize,
-		AutoStream: false,
-		AutoReplay: true,
-		streams:    make(map[string]*Stream),
-		Headers:    map[string]string{},
+		BufferSize:        DefaultBufferSize,
+		AutoStream:        false,
+		AutoReplay:        true,
+		MaxEventLogEvents: DefaultMaxEventLogEvents,
+		MaxEventLogBytes:  DefaultMaxEventLogBytes,
+		streams:           make(map[string]*Stream),
+		Headers:           map[string]string{},
 	}
 }
 
 // NewWithCallback will create a server and setup defaults with callback function
 func NewWithCallback(onSubscribe, onUnsubscribe func(streamID string, sub *Subscriber)) *Server {
 	return &Server{
-		BufferSize:    DefaultBufferSize,
-		AutoStream:    false,
-		AutoReplay:    true,
-		streams:       make(map[string]*Stream),
-		Headers:       map[string]string{},
-		OnSubscribe:   onSubscribe,
-		OnUnsubscribe: onUnsubscribe,
+		BufferSize:        DefaultBufferSize,
+		AutoStream:        false,
+		AutoReplay:        true,
+		MaxEventLogEvents: DefaultMaxEventLogEvents,
+		MaxEventLogBytes:  DefaultMaxEventLogBytes,
+		streams:           make(map[string]*Stream),
+		Headers:           map[string]string{},
+		OnSubscribe:       onSubscribe,
+		OnUnsubscribe:     onUnsubscribe,
 	}
 }
 
@@ -82,7 +103,7 @@ func (s *Server) CreateStream(id string) *Stream {
 		return s.streams[id]
 	}
 
-	str := newStream(id, s.BufferSize, s.AutoReplay, s.AutoStream, s.OnSubscribe, s.OnUnsubscribe)
+	str := newStream(id, s.BufferSize, s.AutoReplay, s.AutoStream, s.MaxEventLogEvents, s.MaxEventLogBytes, s.OnSubscribe, s.OnUnsubscribe)
 	str.run()
 
 	s.streams[id] = str
@@ -99,6 +120,26 @@ func (s *Server) RemoveStream(id string) {
 		s.streams[id].close()
 		delete(s.streams, id)
 	}
+}
+
+// removeStreamIfEmpty removes id only while it still maps to str and str still
+// has no subscribers.
+//
+// Both conditions are checked under the streams lock. Testing identity matters:
+// between a subscriber leaving and this call, another connection may already
+// have created a replacement stream under the same id, and tearing that one
+// down would disconnect a live client.
+func (s *Server) removeStreamIfEmpty(id string, str *Stream) {
+	s.muStreams.Lock()
+	defer s.muStreams.Unlock()
+
+	cur := s.streams[id]
+	if cur == nil || cur != str || cur.getSubscriberCount() != 0 {
+		return
+	}
+
+	cur.close()
+	delete(s.streams, id)
 }
 
 // StreamExists checks whether a stream by a given id exists

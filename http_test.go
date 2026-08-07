@@ -20,7 +20,9 @@ func TestHTTPStreamHandler(t *testing.T) {
 	defer s.Close()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", s.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		s.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server := httptest.NewServer(mux)
 
 	s.CreateStream("test")
@@ -53,7 +55,9 @@ func TestHTTPStreamHandlerExistingEvents(t *testing.T) {
 	defer s.Close()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", s.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		s.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server := httptest.NewServer(mux)
 
 	s.CreateStream("test")
@@ -90,7 +94,9 @@ func TestHTTPStreamHandlerEventID(t *testing.T) {
 	defer s.Close()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", s.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		s.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server := httptest.NewServer(mux)
 
 	s.CreateStream("test")
@@ -128,7 +134,9 @@ func TestHTTPStreamHandlerEventTTL(t *testing.T) {
 	s.EventTTL = time.Second * 1
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", s.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		s.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server := httptest.NewServer(mux)
 
 	s.CreateStream("test")
@@ -164,7 +172,9 @@ func TestHTTPStreamHandlerHeaderFlushIfNoEvents(t *testing.T) {
 	defer s.Close()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", s.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		s.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server := httptest.NewServer(mux)
 
 	s.CreateStream("test")
@@ -196,7 +206,9 @@ func TestHTTPStreamHandlerAutoStream(t *testing.T) {
 	sseServer.AutoStream = true
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", sseServer.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		sseServer.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server := httptest.NewServer(mux)
 
 	c := NewClient(server.URL + "/events")

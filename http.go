@@ -34,17 +34,6 @@ func (s *Server) ServeHTTP(streamID string, w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	stream := s.getStream(streamID)
-
-	if stream == nil {
-		if !s.AutoStream {
-			http.Error(w, "Stream not found!", http.StatusInternalServerError)
-			return
-		}
-
-		stream = s.CreateStream(streamID)
-	}
-
 	eventid := 0
 	if id := r.Header.Get("Last-Event-ID"); id != "" {
 		var err error
@@ -55,16 +44,54 @@ func (s *Server) ServeHTTP(streamID string, w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Create the stream subscriber
-	sub := stream.addSubscriber(eventid, r.URL)
+	// Look up (or create) the stream and subscribe to it. With AutoStream the
+	// last subscriber leaving tears the stream down, so a stream found here can
+	// be gone by the time we register on it -- addSubscriber then returns nil
+	// and we try again against a fresh one.
+	var (
+		stream *Stream
+		sub    *Subscriber
+	)
+	for attempt := 0; attempt < 3; attempt++ {
+		stream = s.getStream(streamID)
+
+		if stream == nil {
+			if !s.AutoStream {
+				http.Error(w, "Stream not found!", http.StatusInternalServerError)
+				return
+			}
+
+			stream = s.CreateStream(streamID)
+		}
+
+		if sub = stream.addSubscriber(eventid, r.URL); sub != nil {
+			break
+		}
+	}
+
+	if sub == nil {
+		// Every attempt lost the race. Do not leave the stream created by the
+		// final attempt registered with no subscriber: nothing would ever tear
+		// it down, so it would keep a run() goroutine and an event log alive for
+		// the lifetime of the process.
+		if s.AutoStream && stream != nil {
+			s.removeStreamIfEmpty(streamID, stream)
+		}
+		http.Error(w, "Stream unavailable, please retry!", http.StatusServiceUnavailable)
+		return
+	}
 
 	go func() {
 		<-r.Context().Done()
 
 		sub.close()
 
-		if s.AutoStream && !s.AutoReplay && stream.getSubscriberCount() == 0 {
-			s.RemoveStream(streamID)
+		// An auto-created stream exists only to serve its subscribers, so drop
+		// it once the last one leaves. Otherwise every stream id a client has
+		// ever opened stays registered -- with a live run() goroutine and a
+		// retained event log -- for the lifetime of the process.
+		if s.AutoStream {
+			s.removeStreamIfEmpty(streamID, stream)
 		}
 	}()
 

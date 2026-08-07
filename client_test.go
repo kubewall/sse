@@ -55,7 +55,9 @@ func newServer() *Server {
 	srv = New()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/events", srv.ServeHTTP)
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		srv.ServeHTTP(r.URL.Query().Get("stream"), w, r)
+	})
 	server = httptest.NewServer(mux)
 	urlPath = server.URL + "/events"
 

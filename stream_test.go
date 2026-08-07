@@ -16,7 +16,7 @@ import (
 // Maybe fix this in the future so we can test with -race enabled
 
 func TestStreamAddSubscriber(t *testing.T) {
-	s := newStream("test", 1024, true, false, nil, nil)
+	s := newStream("test", 1024, true, false, DefaultMaxEventLogEvents, DefaultMaxEventLogBytes, nil, nil)
 	s.run()
 	defer s.close()
 
@@ -25,16 +25,22 @@ func TestStreamAddSubscriber(t *testing.T) {
 
 	assert.Equal(t, 1, s.getSubscriberCount())
 
-	s.event <- &Event{Data: []byte("test")}
+	// With AutoReplay the subscriber first receives the replayed event, then the
+	// live one. Assert both arrive rather than checking len(sub.connection),
+	// which races: whether the second event has been delivered yet is timing
+	// dependent.
 	msg, err := wait(sub.connection, time.Second*1)
-
 	require.Nil(t, err)
 	assert.Equal(t, []byte(`test`), msg)
-	assert.Equal(t, 0, len(sub.connection))
+
+	s.event <- &Event{Data: []byte("test")}
+	msg, err = wait(sub.connection, time.Second*1)
+	require.Nil(t, err)
+	assert.Equal(t, []byte(`test`), msg)
 }
 
 func TestStreamRemoveSubscriber(t *testing.T) {
-	s := newStream("test", 1024, true, false, nil, nil)
+	s := newStream("test", 1024, true, false, DefaultMaxEventLogEvents, DefaultMaxEventLogBytes, nil, nil)
 	s.run()
 	defer s.close()
 
@@ -47,7 +53,7 @@ func TestStreamRemoveSubscriber(t *testing.T) {
 }
 
 func TestStreamSubscriberClose(t *testing.T) {
-	s := newStream("test", 1024, true, false, nil, nil)
+	s := newStream("test", 1024, true, false, DefaultMaxEventLogEvents, DefaultMaxEventLogBytes, nil, nil)
 	s.run()
 	defer s.close()
 
@@ -59,7 +65,7 @@ func TestStreamSubscriberClose(t *testing.T) {
 }
 
 func TestStreamDisableAutoReplay(t *testing.T) {
-	s := newStream("test", 1024, true, false, nil, nil)
+	s := newStream("test", 1024, true, false, DefaultMaxEventLogEvents, DefaultMaxEventLogBytes, nil, nil)
 	s.run()
 	defer s.close()
 
@@ -74,7 +80,7 @@ func TestStreamDisableAutoReplay(t *testing.T) {
 func TestStreamMultipleSubscribers(t *testing.T) {
 	var subs []*Subscriber
 
-	s := newStream("test", 1024, true, false, nil, nil)
+	s := newStream("test", 1024, true, false, DefaultMaxEventLogEvents, DefaultMaxEventLogBytes, nil, nil)
 	s.run()
 
 	for i := 0; i < 10; i++ {
